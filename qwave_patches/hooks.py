@@ -139,9 +139,9 @@ app_license = "MIT"
 # Overriding Methods
 # ------------------------------
 #
-# override_whitelisted_methods = {
-#	"frappe.desk.doctype.event.event.get_events": "qwave_patches.event.get_events"
-# }
+override_whitelisted_methods = {
+	"erpnext.erpnext_integrations.connectors.woocommerce_connection.order": "qwave_patches.erpnext_integrations.connectors.woocommerce_connection.order"
+}
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
