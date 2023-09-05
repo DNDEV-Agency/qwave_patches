@@ -1,0 +1,18 @@
+include MANIFEST.in
+include requirements.txt
+include *.json
+include *.md
+include *.py
+include *.txt
+recursive-include qwave_patches *.css
+recursive-include qwave_patches *.csv
+recursive-include qwave_patches *.html
+recursive-include qwave_patches *.ico
+recursive-include qwave_patches *.js
+recursive-include qwave_patches *.json
+recursive-include qwave_patches *.md
+recursive-include qwave_patches *.png
+recursive-include qwave_patches *.py
+recursive-include qwave_patches *.svg
+recursive-include qwave_patches *.txt
+recursive-exclude qwave_patches *.pyc
