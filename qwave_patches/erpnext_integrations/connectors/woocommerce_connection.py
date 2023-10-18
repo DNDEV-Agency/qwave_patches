@@ -100,7 +100,8 @@ def link_customer_and_address(raw_billing_data, raw_shipping_data, customer_name
 		create_contact(raw_billing_data, customer)
 
 def create_sales_order(order, woocommerce_settings, customer_name, sys_lang):
-	if order.get("date_paid_gmt") is None:
+	acceptable_status_list = ["partial-payment", "completed"]
+	if not (order.get("transaction_id") or order.get("status") in acceptable_status_list):
 		return frappe.throw("Order not paid yet")
 	
 	new_sales_order = frappe.new_doc("Sales Order")
