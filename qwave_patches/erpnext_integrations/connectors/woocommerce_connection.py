@@ -167,7 +167,7 @@ def create_payment_entry(order, woocommerce_settings, customer_name, ref):
 	new_payment_entry.posting_date = order.get("date_created").split("T")[0]
 	new_payment_entry.payment_type = "Receive"
 	new_payment_entry.mode_of_payment = "Credit Card"
-	new_payment_entry.paid_to = "Cash - ZD"
+	new_payment_entry.paid_to = frappe.db.get_value("Company", woocommerce_settings.company, "default_income_account")
 	new_payment_entry.reference_no = order.get("transaction_id")
 	new_payment_entry.party_type = "Customer"
 	new_payment_entry.party = customer_name
