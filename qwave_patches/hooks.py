@@ -102,13 +102,11 @@ app_license = "MIT"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-#	"*": {
-#		"on_update": "method",
-#		"on_cancel": "method",
-#		"on_trash": "method"
-#	}
-# }
+doc_events = {
+	"Sales Invoice": {
+		"on_change": "qwave_patches.events.on_sales_invoice_update"
+	}
+}
 
 # Scheduled Tasks
 # ---------------

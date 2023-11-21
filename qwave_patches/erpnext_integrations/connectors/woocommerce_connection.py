@@ -33,7 +33,10 @@ def _order(*args, **kwargs):
 		event = "created"
 		
 	elif frappe.request and frappe.request.data:
+		print("verify_request")
+		print("event: ", frappe.get_request_header("X-Wc-Webhook-Event"))
 		verify_request()
+		print("verified_request")
 		try:
 			order = json.loads(frappe.request.data)
 		except ValueError:
@@ -44,12 +47,10 @@ def _order(*args, **kwargs):
 	else:
 		return "success"
 
-	if event == "created":
+	if event == "created" or event == "updated":
 		sys_lang = frappe.get_single("System Settings").language or "en"
-		raw_billing_data = order.get("billing")
-		raw_shipping_data = order.get("shipping")
-		customer_name = raw_billing_data.get("first_name") + " " + raw_billing_data.get("last_name")
-		link_customer_and_address(raw_billing_data, raw_shipping_data, customer_name)
+		link_customer_and_address(order)
+		customer_name = get_customer_name(order)
 		link_items(order.get("line_items"), woocommerce_settings, sys_lang)
 		so = create_sales_order(order, woocommerce_settings, customer_name, sys_lang)
 		create_payment_entry(order, woocommerce_settings, customer_name, so)
@@ -58,21 +59,46 @@ def _order(*args, **kwargs):
 		si = si.insert(ignore_permissions=True)
 		si.submit()
 
+def get_customer_name(payload):
+	customer_woo_com_id = payload.get("customer_id")
+	customer_woo_com_email = payload.get("billing").get("email")
+	if customer_woo_com_id:
+		customer_exists = frappe.get_value("Customer", {"woocommerce_id": customer_woo_com_id})
+		if customer_exists:
+			return frappe.get_value("Customer", {"woocommerce_id": customer_woo_com_id}, "name")
+	else:
+		customer_exists = frappe.get_value("Customer", {"woocommerce_email": customer_woo_com_email})
+		if customer_exists:
+			return frappe.get_value("Customer", {"woocommerce_email": customer_woo_com_email}, "name")
+	return None
 
-
-def link_customer_and_address(raw_billing_data, raw_shipping_data, customer_name):
+def link_customer_and_address(payload):
+	raw_billing_data = payload.get("billing")
+	raw_shipping_data = payload.get("shipping")
+	customer_name = raw_billing_data.get("first_name") + " " + raw_billing_data.get("last_name")
+	customer_woo_com_id = payload.get("customer_id")
 	customer_woo_com_email = raw_billing_data.get("email")
-	customer_exists = frappe.get_value("Customer", {"woocommerce_email": customer_woo_com_email})
+	
+	if customer_woo_com_id:
+		customer_exists = frappe.get_value("Customer", {"woocommerce_id": customer_woo_com_id})
+		if customer_exists:
+			customer = frappe.get_doc("Customer", {"woocommerce_id": customer_woo_com_id})
+			old_name = customer.customer_name
+	else:
+		customer_exists = frappe.get_value("Customer", {"woocommerce_email": customer_woo_com_email})
+		if customer_exists:
+			customer = frappe.get_doc("Customer", {"woocommerce_email": customer_woo_com_email})
+			old_name = customer.customer_name	
+
 	if not customer_exists:
 		# Create Customer
 		customer = frappe.new_doc("Customer")
-	else:
-		# Edit Customer
-		customer = frappe.get_doc("Customer", {"woocommerce_email": customer_woo_com_email})
-		old_name = customer.customer_name
 
 	customer.customer_name = customer_name
 	customer.woocommerce_email = customer_woo_com_email
+	if customer_woo_com_id:
+		customer.woocommerce_id = customer_woo_com_id
+		customer.custom_qwave_id = customer_woo_com_id
 	customer.flags.ignore_mandatory = True
 	customer.save()
 
@@ -174,6 +200,7 @@ def create_payment_entry(order, woocommerce_settings, customer_name, ref):
 	new_payment_entry.paid_amount = order.get("total")
 	new_payment_entry.received_amount = order.get("total")
 	new_payment_entry.company = woocommerce_settings.company
+	new_payment_entry.cost_center = frappe.db.get_value("Company", woocommerce_settings.company, "cost_center")
 	payment_reference = {
 		"allocated_amount": float(order.get("total")),
 		"due_date": order.get("date_created").split("T")[0],
