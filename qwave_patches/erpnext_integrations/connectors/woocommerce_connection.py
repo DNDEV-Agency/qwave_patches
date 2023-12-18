@@ -27,11 +27,11 @@ def order(*args, **kwargs):
 
 def _order(*args, **kwargs):
 	woocommerce_settings = frappe.get_doc("Woocommerce Settings")
-    
+
 	if frappe.flags.woocomm_test_order_data:
 		order = frappe.flags.woocomm_test_order_data
 		event = "created"
-		
+
 	elif frappe.request and frappe.request.data:
 		print("verify_request")
 		print("event: ", frappe.get_request_header("X-Wc-Webhook-Event"))
@@ -78,7 +78,7 @@ def link_customer_and_address(payload):
 	customer_name = raw_billing_data.get("first_name") + " " + raw_billing_data.get("last_name")
 	customer_woo_com_id = payload.get("customer_id")
 	customer_woo_com_email = raw_billing_data.get("email")
-	
+
 	if customer_woo_com_id:
 		customer_exists = frappe.get_value("Customer", {"woocommerce_id": customer_woo_com_id})
 		if customer_exists:
@@ -88,7 +88,7 @@ def link_customer_and_address(payload):
 		customer_exists = frappe.get_value("Customer", {"woocommerce_email": customer_woo_com_email})
 		if customer_exists:
 			customer = frappe.get_doc("Customer", {"woocommerce_email": customer_woo_com_email})
-			old_name = customer.customer_name	
+			old_name = customer.customer_name
 
 	if not customer_exists:
 		# Create Customer
@@ -129,7 +129,7 @@ def create_sales_order(order, woocommerce_settings, customer_name, sys_lang):
 	acceptable_status_list = ["partial-payment", "completed"]
 	if not (order.get("transaction_id") or order.get("status") in acceptable_status_list):
 		return frappe.throw("Order not paid yet")
-	
+
 	new_sales_order = frappe.new_doc("Sales Order")
 	new_sales_order.customer = customer_name
 	new_sales_order.po_no = new_sales_order.woocommerce_id = order.get("id")
@@ -137,7 +137,7 @@ def create_sales_order(order, woocommerce_settings, customer_name, sys_lang):
 	new_sales_order.company = woocommerce_settings.company
 	new_sales_order.transaction_date = order.get("date_created").split("T")[0]
 	new_sales_order.delivery_date = frappe.utils.add_days(order.get("date_created").split("T")[0], woocommerce_settings.delivery_after_days or 7)
-	
+
 	set_items_in_sales_order(new_sales_order, woocommerce_settings, order, sys_lang)
 	new_sales_order.flags.ignore_mandatory = True
 	new_sales_order.insert()
@@ -152,7 +152,7 @@ def set_items_in_sales_order(new_sales_order, woocommerce_settings, order, sys_l
 	default_warehouse = _("Stores - {0}", sys_lang).format(company_abbr)
 	if not frappe.db.exists("Warehouse", default_warehouse) and not woocommerce_settings.warehouse:
 		frappe.throw(_("Please set Warehouse in Woocommerce Settings"))
-	
+
 	for item in order.get("line_items"):
 		woocomm_item_id = item.get("product_id")
 		found_item = frappe.get_doc("Item", {"woocommerce_id": cstr(woocomm_item_id)})
@@ -166,7 +166,7 @@ def set_items_in_sales_order(new_sales_order, woocommerce_settings, order, sys_l
 				"item_name": found_item.item_name,
 				"description": found_item.item_name,
 				"uom": woocommerce_settings.uom or _("Nos", sys_lang),
-				"qty": item.get("quantity"),
+				"qty": calculate_quantity(item),
 				"rate": int(item["product_data"]["price"]),
 				"warehouse": woocommerce_settings.warehouse or default_warehouse,
 			},
@@ -193,8 +193,11 @@ def create_payment_entry(order, woocommerce_settings, customer_name, ref):
 	new_payment_entry.posting_date = order.get("date_created").split("T")[0]
 	new_payment_entry.payment_type = "Receive"
 	new_payment_entry.mode_of_payment = "Credit Card"
-	new_payment_entry.paid_to = frappe.db.get_value("Company", woocommerce_settings.company, "default_income_account")
+	# new_payment_entry.paid_to = frappe.db.get_value("Company", woocommerce_settings.company, "default_income_account")
+	new_payment_entry.paid_to = frappe.db.get_value("Company", woocommerce_settings.company, "default_bank_account")
+	
 	new_payment_entry.reference_no = order.get("transaction_id")
+	new_payment_entry.reference_date = order.get("date_created").split("T")[0]
 	new_payment_entry.party_type = "Customer"
 	new_payment_entry.party = customer_name
 	new_payment_entry.paid_amount = order.get("total")
@@ -211,3 +214,14 @@ def create_payment_entry(order, woocommerce_settings, customer_name, ref):
 	new_payment_entry.save()
 	new_payment_entry.submit()
 	frappe.db.commit()
+
+def calculate_quantity(item):
+	product_data = item.get("product_data")
+	is_booking = product_data.get("type") == "booking"
+	if is_booking:
+		single_booking_price = float(product_data.get("price", 0))
+		total_price_dict = next((d for d in item.get("meta_data", []) if d.get("key") == "_deposit_full_amount"), None)
+		if total_price_dict:
+			total_price = float(total_price_dict.get("value", 0))
+			return round(total_price / single_booking_price)
+	return item.get("quantity")
